@@ -215,9 +215,8 @@ const CourseEditor = ({ onClose, settings }) => {
   };
 
   const handleAddCourse = (day) => {
-    const defaultType = Object.keys(settings.courseTypes)[0] || 'new_type';
     const newCourse = {
-      type: defaultType, courseCode: "", courseTitle: "",
+      type: "", courseCode: "", courseTitle: "", // 默认类型设置为空字符串
       startTime: "09:00", endTime: "11:50", venue: "", instructor: "",
       dateRanges: [{ startDate: "2025/09/01", endDate: "2025/11/30" }],
       remarks: ""
@@ -297,11 +296,18 @@ const CourseEditor = ({ onClose, settings }) => {
                 {courses[activeSemester][day].map((course, index) => (
                   <div key={index} className="course-form">
                     <button onClick={() => handleDeleteCourse(day, index)} className="delete-course-btn">×</button>
-                    <select value={course.type} onChange={e => handleCourseChange(day, index, 'type', e.target.value)}>
+                    <input
+                      type="text"
+                      list="course-types-list"
+                      placeholder="课程类型 (例如: 必修, 选修)"
+                      value={course.type}
+                      onChange={e => handleCourseChange(day, index, 'type', e.target.value)}
+                    />
+                    <datalist id="course-types-list">
                       {Object.entries(settings.courseTypes).map(([key, name]) => (
-                        <option key={key} value={key}>{name}</option>
+                        <option key={key} value={name} />
                       ))}
-                    </select>
+                    </datalist>
                     <input type="text" placeholder="Course Code" value={course.courseCode} onChange={e => handleCourseChange(day, index, 'courseCode', e.target.value)} />
                     <input type="text" className="full-width" placeholder="Course Title" value={course.courseTitle} onChange={e => handleCourseChange(day, index, 'courseTitle', e.target.value)} />
                     <input type="time" value={course.startTime} onChange={e => handleCourseChange(day, index, 'startTime', e.target.value)} />
@@ -566,12 +572,31 @@ const App = () => {
       const newEvents = [];
       const newDayTypes = {};
       let earliestDate = null;
+      let updatedSettings = { ...settings }; // Create a mutable copy of settings
 
       Object.values(coursesData).forEach(semesterData => {
         Object.keys(semesterData).forEach(day => {
           if (Array.isArray(semesterData[day])) {
-            const dayIndex = getDayIndex(day, settings.startOfWeek);
+            const dayIndex = getDayIndex(day, updatedSettings.startOfWeek);
             semesterData[day].forEach(course => {
+              // Handle new course types from JSON
+              const originalType = course.type;
+              const typeKey = originalType ? originalType.toLowerCase().replace(/\s+/g, '_') : '';
+
+              if (originalType && !updatedSettings.courseTypes[typeKey]) {
+                updatedSettings = {
+                  ...updatedSettings,
+                  courseTypes: {
+                    ...updatedSettings.courseTypes,
+                    [typeKey]: originalType // Use original type as display name
+                  },
+                  typeColors: {
+                    ...updatedSettings.typeColors,
+                    [typeKey]: getRandomColor() // Assign a random color
+                  }
+                };
+              }
+
               course.dateRanges.forEach(range => {
                 let current = moment(range.startDate, 'YYYY/MM/DD');
                 const end = moment(range.endDate, 'YYYY/MM/DD');
@@ -583,12 +608,9 @@ const App = () => {
                 while (current.isSameOrBefore(end)) {
                   if (current.day() === dayIndex) {
                     const dateStr = current.format('YYYY-MM-DD');
-                    const courseType = course.type ? course.type.toLowerCase() : ''; // Use the actual type key
                     
-                    // This logic might need refinement based on desired priority,
-                    // but for now, we just mark the day with the first type found.
                     if (!newDayTypes[dateStr]) {
-                      newDayTypes[dateStr] = courseType;
+                      newDayTypes[dateStr] = typeKey; // Use the processed typeKey
                     }
 
                     newEvents.push({
@@ -613,10 +635,15 @@ const App = () => {
 
       setEvents(newEvents);
       setDayTypes(newDayTypes);
+      // Only update settings if they actually changed
+      if (JSON.stringify(updatedSettings) !== JSON.stringify(settings)) {
+        setSettings(updatedSettings);
+        localStorage.setItem('calendarSettings', JSON.stringify(updatedSettings));
+      }
     };
 
     loadCourseData();
-  }, [settings]);
+  }, [settings]); // Depend on settings to re-run if settings change externally
 
   const handleSettingsChange = (newSettings) => {
     localStorage.setItem('calendarSettings', JSON.stringify(newSettings));
